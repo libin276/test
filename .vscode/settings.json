@@ -1,3 +1,4 @@
 {
-  "pasteImage.path": "../images"
+  "pasteImage.path": "../images",
+  "python-envs.defaultEnvManager": "ms-python.python:system"
 }
