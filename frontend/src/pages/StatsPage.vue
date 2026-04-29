@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getDeviceRank, getMessageTrend, getTopicRank } from '../api'
 
@@ -7,16 +7,23 @@ const trendData = ref([])
 const topicRank = ref([])
 const deviceRank = ref([])
 const loading = ref(false)
+const trendGranularity = ref('hour')
 
 function calcWidth(value, max) {
   return `${Math.round((value / max) * 100)}%`
+}
+
+const trendMax = computed(() => Math.max(...trendData.value.map((item) => item.value), 1))
+
+function calcTrendHeight(value) {
+  return `${Math.max(18, Math.round((value / trendMax.value) * 180))}px`
 }
 
 async function loadStats() {
   loading.value = true
   try {
     const [trend, topics, devices] = await Promise.all([
-      getMessageTrend(),
+      getMessageTrend({ granularity: trendGranularity.value }),
       getTopicRank(),
       getDeviceRank(),
     ])
@@ -39,13 +46,17 @@ onMounted(loadStats)
       <div class="card-header">
         <div>
           <h3>消息量趋势</h3>
-          <p>按小时查看采集消息波动，用于判断峰值和异常抖动</p>
+          <p>{{ trendGranularity === 'hour' ? '按小时查看采集消息波动，用于判断峰值和异常抖动' : '按日查看采集总量，用于观察趋势变化和积累规模' }}</p>
         </div>
+        <el-radio-group v-model="trendGranularity" @change="loadStats">
+          <el-radio-button value="hour">小时</el-radio-button>
+          <el-radio-button value="day">日</el-radio-button>
+        </el-radio-group>
       </div>
       <div class="trend-grid">
         <div v-for="item in trendData" :key="item.label" class="trend-item">
           <div class="trend-bar-wrap">
-            <div class="trend-bar" :style="{ height: `${item.value}px` }"></div>
+            <div class="trend-bar" :style="{ height: calcTrendHeight(item.value) }"></div>
           </div>
           <strong>{{ item.value }}</strong>
           <span>{{ item.label }}</span>

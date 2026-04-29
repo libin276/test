@@ -8,7 +8,6 @@ import {
   Monitor,
   DataAnalysis,
   Setting,
-  Bell,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -39,12 +38,6 @@ function handleSelect(index) {
           <div class="brand-title">MQTT订阅管理器</div>
           <div class="brand-subtitle">网关与云平台消息排障中心</div>
         </div>
-      </div>
-      <div class="header-actions">
-        <el-badge :value="3" class="notice-badge">
-          <el-button :icon="Bell" circle />
-        </el-badge>
-        <div class="user-chip">运维管理员</div>
       </div>
     </el-header>
     <el-container>

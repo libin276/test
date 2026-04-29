@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { formatChinaTime } from '../api'
 import {
   createTopic,
   deleteTopic,
@@ -157,6 +158,10 @@ onMounted(async () => {
   await loadServerOptions()
   await loadTopics()
 })
+
+function formatTimestamp(value) {
+  return formatChinaTime(value)
+}
 </script>
 
 <template>
@@ -214,7 +219,11 @@ onMounted(async () => {
             />
           </template>
         </el-table-column>
-        <el-table-column prop="updated_at" label="更新时间" width="170" />
+        <el-table-column label="更新时间" width="182">
+          <template #default="scope">
+            {{ formatTimestamp(scope.row.updated_at) }}
+          </template>
+        </el-table-column>
         <el-table-column label="操作" fixed="right" width="220">
           <template #default="scope">
             <el-button link type="primary">详情</el-button>

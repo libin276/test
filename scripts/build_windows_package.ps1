@@ -15,6 +15,27 @@ $manualPath = Join-Path $root 'WINDOWS_USER_GUIDE.md'
 $pyinstallerWork = Join-Path $buildRoot 'pyinstaller-work'
 $pyinstallerSpec = Join-Path $buildRoot 'spec'
 
+function Invoke-WithRetry {
+    param(
+        [scriptblock]$Action,
+        [int]$RetryCount = 5,
+        [int]$DelayMilliseconds = 1200
+    )
+
+    for ($index = 0; $index -lt $RetryCount; $index++) {
+        try {
+            & $Action
+            return
+        }
+        catch {
+            if ($index -ge ($RetryCount - 1)) {
+                throw
+            }
+            [System.Threading.Thread]::Sleep($DelayMilliseconds)
+        }
+    }
+}
+
 if (-not (Test-Path $python)) {
     throw 'Workspace .venv not found.'
 }
@@ -68,7 +89,9 @@ Set-Content -Path (Join-Path $portableDir 'uninstall_mqtt_manager.bat') -Value $
 if (Test-Path $zipPath) {
     Remove-Item $zipPath -Force
 }
-Compress-Archive -Path (Join-Path $portableDir '*') -DestinationPath $zipPath -Force
+Invoke-WithRetry -Action {
+    Compress-Archive -Path (Join-Path $portableDir '*') -DestinationPath $zipPath -Force
+}
 
 $installBat = @(
     '@echo off',
@@ -109,7 +132,7 @@ $sedContent = @(
     'FinishMessage=MQTT Subscription Manager installation complete.',
     "TargetName=$setupPath",
     'FriendlyName=MQTT Subscription Manager Setup',
-    'AppLaunched=install.bat',
+    'AppLaunched=cmd.exe /c install.bat',
     'PostInstallCmd=<None>',
     'AdminQuietInstCmd=',
     'UserQuietInstCmd=',

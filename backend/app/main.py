@@ -1,7 +1,7 @@
 import csv
 import io
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +13,8 @@ from .database import Base, engine, get_db
 from .models import Message, Server, Topic
 from .mqtt_runtime import MQTTRuntimeManager
 from .schemas import (
+    MessageCleanupRequest,
+    MessageCleanupResponse,
     MessageListResponse,
     MessageRead,
     RankItem,
@@ -35,6 +37,8 @@ settings_state = {
     'cleanup_time': '03:00:00',
     'export_before_cleanup': True,
 }
+
+CHINA_TZ = timezone(timedelta(hours=8))
 
 mqtt_runtime = MQTTRuntimeManager()
 
@@ -77,7 +81,7 @@ def server_to_read(server: Server) -> ServerRead:
         remark=server.remark,
         status=format_server_status(server),
         topic_count=len(server.topics),
-        updated_at=server.updated_at,
+        updated_at=to_china_time_string(server.updated_at),
     )
 
 
@@ -91,7 +95,7 @@ def topic_to_read(topic: Topic) -> TopicRead:
         direction=topic.direction,
         enabled=topic.enabled,
         remark=topic.remark,
-        updated_at=topic.updated_at,
+        updated_at=to_china_time_string(topic.updated_at),
     )
 
 
@@ -106,8 +110,31 @@ def message_to_read(message: Message) -> MessageRead:
         device_id=message.device_id,
         direction=message.direction,
         raw=message.raw,
-        timestamp=message.timestamp,
+        timestamp=to_china_time_string(message.timestamp),
     )
+
+
+def normalize_client_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def to_china_time(value: datetime | str) -> datetime:
+    if isinstance(value, str):
+        normalized = value.replace('Z', '+00:00')
+        value = datetime.fromisoformat(normalized)
+    if value.tzinfo is not None:
+        return value.astimezone(CHINA_TZ)
+    return value.replace(tzinfo=timezone.utc).astimezone(CHINA_TZ)
+
+
+def to_china_time_string(value: datetime | str | None) -> str | None:
+    if value is None:
+        return None
+    return to_china_time(value).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def get_server_or_404(db: Session, server_id: int) -> Server:
@@ -131,7 +158,14 @@ def health_check():
 
 @app.get('/api/runtime')
 def runtime_overview():
-    return mqtt_runtime.runtime_stats()
+    runtime = mqtt_runtime.runtime_stats()
+    runtime['last_flush_at'] = to_china_time_string(runtime.get('last_flush_at'))
+
+    for server in runtime.get('servers', []):
+        server['connected_at'] = to_china_time_string(server.get('connected_at'))
+        server['last_message_at'] = to_china_time_string(server.get('last_message_at'))
+
+    return runtime
 
 
 @app.get('/api/servers', response_model=list[ServerRead])
@@ -255,7 +289,14 @@ def delete_topic(topic_id: int, db: Session = Depends(get_db)):
     return Response(status_code=204)
 
 
-def build_message_stmt(server_id: int | None, topics: list[str] | None, keyword: str | None, start: datetime | None, end: datetime | None):
+def build_message_stmt(
+    server_id: int | None,
+    topics: list[str] | None,
+    keyword: str | None,
+    direction: str | None,
+    start: datetime | None,
+    end: datetime | None,
+):
     stmt = select(Message).order_by(Message.timestamp.desc())
     if server_id is not None:
         stmt = stmt.where(Message.server_id == server_id)
@@ -263,10 +304,12 @@ def build_message_stmt(server_id: int | None, topics: list[str] | None, keyword:
         stmt = stmt.where(Message.topic.in_(topics))
     if keyword:
         stmt = stmt.where(or_(Message.topic.contains(keyword), Message.payload.contains(keyword), Message.device_id.contains(keyword)))
+    if direction:
+        stmt = stmt.where(Message.direction == direction)
     if start is not None:
-        stmt = stmt.where(Message.timestamp >= start)
+        stmt = stmt.where(Message.timestamp >= normalize_client_datetime(start))
     if end is not None:
-        stmt = stmt.where(Message.timestamp <= end)
+        stmt = stmt.where(Message.timestamp <= normalize_client_datetime(end))
     return stmt
 
 
@@ -275,17 +318,18 @@ def list_messages(
     server_id: int | None = None,
     topics: list[str] = Query(default=[]),
     keyword: str | None = None,
+    direction: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=10, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
-    stmt = build_message_stmt(server_id, topics or None, keyword, start, end)
+    stmt = build_message_stmt(server_id, topics or None, keyword, direction, start, end)
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = db.scalars(stmt.offset((page - 1) * size).limit(size)).unique().all()
 
-    summary_stmt = build_message_stmt(server_id, topics or None, keyword, start, end)
+    summary_stmt = build_message_stmt(server_id, topics or None, keyword, direction, start, end)
     summary_items = db.scalars(summary_stmt).unique().all()
     summary = {
         'total': len(summary_items),
@@ -306,11 +350,12 @@ def export_messages(
     server_id: int | None = None,
     topics: list[str] = Query(default=[]),
     keyword: str | None = None,
+    direction: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
     db: Session = Depends(get_db),
 ):
-    stmt = build_message_stmt(server_id, topics or None, keyword, start, end)
+    stmt = build_message_stmt(server_id, topics or None, keyword, direction, start, end)
     items = db.scalars(stmt).unique().all()
 
     buffer = io.StringIO()
@@ -318,7 +363,7 @@ def export_messages(
     writer.writerow(['时间戳', '服务器', 'Topic', '方向', 'QoS', '设备ID', '消息内容'])
     for item in items:
         writer.writerow([
-            item.timestamp.isoformat(sep=' ', timespec='seconds'),
+            to_china_time(item.timestamp).isoformat(sep=' ', timespec='seconds'),
             item.server.name,
             item.topic,
             item.direction,
@@ -327,7 +372,7 @@ def export_messages(
             item.payload,
         ])
     content = buffer.getvalue()
-    filename = f"mqtt_logs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = f"mqtt_logs_{datetime.now(CHINA_TZ).strftime('%Y%m%d_%H%M%S')}.csv"
     return StreamingResponse(
         iter([content]),
         media_type='text/csv; charset=utf-8',
@@ -335,14 +380,30 @@ def export_messages(
     )
 
 
+@app.post('/api/messages/cleanup', response_model=MessageCleanupResponse)
+def cleanup_messages(payload: MessageCleanupRequest, db: Session = Depends(get_db)):
+    before = normalize_client_datetime(payload.before)
+    stmt = select(Message).where(Message.timestamp < before)
+    if payload.server_id is not None:
+        stmt = stmt.where(Message.server_id == payload.server_id)
+
+    items = db.scalars(stmt).all()
+    deleted = len(items)
+    for item in items:
+        db.delete(item)
+    db.commit()
+    return MessageCleanupResponse(deleted=deleted)
+
+
 @app.get('/api/stat/message_trend', response_model=list[TrendPoint])
-def message_trend(db: Session = Depends(get_db)):
-    rows = db.execute(
-        select(func.strftime('%H:00', Message.timestamp), func.count(Message.id))
-        .group_by(func.strftime('%H:00', Message.timestamp))
-        .order_by(func.strftime('%H:00', Message.timestamp))
-    ).all()
-    return [TrendPoint(label=row[0], value=row[1]) for row in rows]
+def message_trend(granularity: str = Query(default='hour', pattern='^(hour|day)$'), db: Session = Depends(get_db)):
+    items = db.scalars(select(Message.timestamp).order_by(Message.timestamp.asc())).all()
+    bucket_map: dict[str, int] = {}
+    for item in items:
+        china_time = to_china_time(item)
+        label = china_time.strftime('%H:00') if granularity == 'hour' else china_time.strftime('%Y-%m-%d')
+        bucket_map[label] = bucket_map.get(label, 0) + 1
+    return [TrendPoint(label=label, value=value) for label, value in sorted(bucket_map.items())]
 
 
 @app.get('/api/stat/topic_rank', response_model=list[RankItem])

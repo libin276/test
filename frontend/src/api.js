@@ -1,4 +1,16 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+function resolveApiBaseUrl() {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL
+  }
+
+  const { origin, port } = window.location
+  if (port === '4173') {
+    return 'http://127.0.0.1:8000'
+  }
+  return origin
+}
+
+const API_BASE_URL = resolveApiBaseUrl()
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -118,8 +130,8 @@ export function getRuntimeStatus() {
   return request('/api/runtime')
 }
 
-export function getMessageTrend() {
-  return request('/api/stat/message_trend')
+export function getMessageTrend(params) {
+  return request(`/api/stat/message_trend${buildQuery(params)}`)
 }
 
 export function getTopicRank() {
@@ -143,4 +155,43 @@ export function updateSettings(payload) {
 
 export function buildExportUrl(params) {
   return `${API_BASE_URL}/api/messages/export${buildQuery(params)}`
+}
+
+export function cleanupMessages(payload) {
+  return request('/api/messages/cleanup', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function formatChinaTime(value) {
+  if (!value) {
+    return '--'
+  }
+
+  if (typeof value === 'string') {
+    const normalizedValue = value.trim()
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(normalizedValue)) {
+      return normalizedValue
+    }
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(normalizedValue)) {
+      return normalizedValue.replace('T', ' ').slice(0, 19)
+    }
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date)
 }

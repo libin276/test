@@ -63,10 +63,6 @@ def ensure_live_test_config(db: Session) -> None:
         server = Server(**LIVE_TEST_SERVER)
         db.add(server)
         db.flush()
-    else:
-        for field, value in LIVE_TEST_SERVER.items():
-            setattr(server, field, value)
-        db.flush()
 
     existing_topics = {item.topic: item for item in server.topics}
     for topic_data in LIVE_TEST_TOPICS:

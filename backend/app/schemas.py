@@ -36,7 +36,7 @@ class ServerRead(ServerBase):
     id: int
     status: str
     topic_count: int
-    updated_at: datetime
+    updated_at: str
 
 
 class TopicBase(BaseModel):
@@ -65,7 +65,7 @@ class TopicRead(TopicBase):
 
     id: int
     server_name: str
-    updated_at: datetime
+    updated_at: str
 
 
 class MessageRead(BaseModel):
@@ -78,7 +78,7 @@ class MessageRead(BaseModel):
     device_id: str | None
     direction: DirectionType
     raw: str | None
-    timestamp: datetime
+    timestamp: str
 
 
 class MessageListResponse(BaseModel):
@@ -92,6 +92,15 @@ class MessageListResponse(BaseModel):
 class TrendPoint(BaseModel):
     label: str
     value: int
+
+
+class MessageCleanupRequest(BaseModel):
+    before: datetime
+    server_id: int | None = None
+
+
+class MessageCleanupResponse(BaseModel):
+    deleted: int
 
 
 class RankItem(BaseModel):

@@ -70,23 +70,6 @@ body {
   font-size: 12px;
 }
 
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.user-chip {
-  padding: 10px 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  font-size: 13px;
-}
-
-.notice-badge .el-button {
-  border: none;
-}
-
 .app-aside {
   padding: 18px 14px;
   background: linear-gradient(180deg, #e9f2fe 0%, #f3f8ff 100%);
@@ -242,7 +225,7 @@ body {
 }
 
 .logs-toolbar {
-  grid-template-columns: 1fr 1.1fr 1.2fr 1.7fr auto auto auto;
+  grid-template-columns: 1fr 1.1fr 1.1fr 1.2fr 1.7fr auto auto auto;
 }
 
 .card-header {

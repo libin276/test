@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { formatChinaTime } from '../api'
 import {
   createServer,
   deleteServer,
@@ -13,8 +14,10 @@ const loading = ref(false)
 const submitting = ref(false)
 const tableData = ref([])
 const dialogVisible = ref(false)
+const detailVisible = ref(false)
 const formRef = ref(null)
 const editingId = ref(null)
+const activeServer = ref(null)
 
 const filters = reactive({
   keyword: '',
@@ -94,6 +97,15 @@ function openEditDialog(row) {
     remark: row.remark || '',
   })
   dialogVisible.value = true
+}
+
+function openDetailDialog(row) {
+  activeServer.value = row
+  detailVisible.value = true
+}
+
+function formatTimestamp(value) {
+  return formatChinaTime(value)
 }
 
 async function submitForm() {
@@ -223,16 +235,65 @@ onMounted(loadServers)
             />
           </template>
         </el-table-column>
-        <el-table-column prop="updated_at" label="更新时间" width="170" />
+        <el-table-column label="更新时间" width="182">
+          <template #default="scope">
+            {{ formatTimestamp(scope.row.updated_at) }}
+          </template>
+        </el-table-column>
         <el-table-column label="操作" fixed="right" width="220">
           <template #default="scope">
-            <el-button link type="primary">详情</el-button>
+            <el-button link type="primary" @click="openDetailDialog(scope.row)">详情</el-button>
             <el-button link type="primary" @click="openEditDialog(scope.row)">编辑</el-button>
             <el-button link type="danger" @click="handleDelete(scope.row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
     </section>
+
+    <el-dialog v-model="detailVisible" title="服务器详情" width="680px">
+      <template v-if="activeServer">
+        <div class="detail-grid">
+          <div class="detail-item">
+            <span>服务器名称</span>
+            <strong>{{ activeServer.name }}</strong>
+          </div>
+          <div class="detail-item">
+            <span>连接状态</span>
+            <strong>{{ activeServer.status }}</strong>
+          </div>
+          <div class="detail-item">
+            <span>地址</span>
+            <strong>{{ activeServer.host }}</strong>
+          </div>
+          <div class="detail-item">
+            <span>端口</span>
+            <strong>{{ activeServer.port }}</strong>
+          </div>
+          <div class="detail-item">
+            <span>TLS</span>
+            <strong>{{ activeServer.tls ? '启用' : '关闭' }}</strong>
+          </div>
+          <div class="detail-item">
+            <span>订阅数</span>
+            <strong>{{ activeServer.topic_count }}</strong>
+          </div>
+          <div class="detail-item">
+            <span>用户名</span>
+            <strong>{{ activeServer.username || '--' }}</strong>
+          </div>
+          <div class="detail-item">
+            <span>更新时间</span>
+            <strong>{{ formatTimestamp(activeServer.updated_at) }}</strong>
+          </div>
+        </div>
+        <div class="payload-block raw-block">
+          <div class="payload-header">
+            <h4>备注</h4>
+          </div>
+          <pre>{{ activeServer.remark || '无备注' }}</pre>
+        </div>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="520px" @closed="resetForm">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
